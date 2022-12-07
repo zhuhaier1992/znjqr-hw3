@@ -10,16 +10,16 @@ lbr.Gravity = [0 0 -9.81];
 forceLimit = 100;
 jointNum = 7;
 disp(lbr.BodyNames)
-path_to_urdf = 'iiwa14.urdf';
-kuka = parse_urdf(path_to_urdf);
+%path_to_urdf = 'iiwa14.urdf';
+%kuka = parse_urdf(path_to_urdf);
 
 log_q=[]; log_qdot=[]; log_tau=[];log_t = [];log_ee_pos = [];
-log_r=[];log_rd=[];
+log_r=[];log_rd=[];log_s=[];
 
 %% pd controller parameters
 % ================= your code here==================%
-Ks = diag([1,0.1,1,0.05,1,0.05,0.1]);
-alpha=diag([3,3,3]);
+Ks = diag([1,1,1,1,1,1,0.1]).*1;
+alpha=diag([1,1,1].*100);
 
 
 %% Connect to the Vrep
@@ -90,8 +90,8 @@ end
 
 % end effector position
 [~,eePos]=vrep.simxGetObjectPosition(clientID,eeHandle,-1,vrep.simx_opmode_streaming);
-r0 = eePos';
-disp(r0)
+%r0 = eePos';
+%disp(r0)
 
 
 % initialize last
@@ -101,9 +101,7 @@ end
 if ~exist('qdot_last','var') 
     qdot_last = jointVeloc; 
 end
-if ~exist('rd_last','var') 
-    rd_last = r0; 
-end
+
 if ~exist('qrdot_last','var') 
     qrdot_last = 0; % t=0时，r=rd,rddot=0
 end
@@ -135,13 +133,18 @@ while (vrep.simxGetConnectionId(clientID) ~= -1)  % vrep connection is still act
     qdot=jointVeloc;    
     qdotdot = (qdot-qdot_last)./dt;% column vector
 
-    [~,eePos]=vrep.simxGetObjectPosition(clientID,eeHandle,-1,vrep.simx_opmode_streaming);
+    [~,eePos]=vrep.simxGetObjectPosition(clientID,eeHandle,-1,vrep.simx_opmode_buffer);
     r = eePos';
+    if ~exist('r0','var') 
+        r0=r; 
+    end
+    if ~exist('rd_last','var') 
+        rd_last = r0; 
+    end
     rd=[r0(1);r0(2)+0.1*sin(2*pi*(currCmdTime/1000-tInit));r0(3)];
-    disp(rd)
     rddot=(rd-rd_last)./dt;
+    disp('delta r')
     disp(r-rd)
-    disp(rddot)
     
 
     % 3. calculate tau
@@ -159,8 +162,7 @@ while (vrep.simxGetConnectionId(clientID) ~= -1)  % vrep connection is still act
     %disp(C)
 
     s=qdot-qrdot;
-    disp(qdot)
-    disp(qrdot)
+    disp(s);
     tau_s = -Ks*s;
     tau_d = M*qrdotdot+C'*qrdot+g;
     tau = tau_d+tau_s;
@@ -202,15 +204,22 @@ while (vrep.simxGetConnectionId(clientID) ~= -1)  % vrep connection is still act
     vrep.simxGetPingTime(clientID);
     t=t+dt; % updata simulation time
     log_t = [log_t t];
+    log_s=[log_s s];
     disptime = sprintf('the time is %f s', t);
     disp(disptime);
+
     figure(1)
     for j=1:3
-        subplot(3,1,j);
+        subplot(6,1,j);
         plot(log_t,log_r(j,:),log_t,log_rd(j,:));hold on;
-        scatter(log_t(end),max(log_rd(j,:)));
-        grid;
+        %scatter(log_t(end),max(log_rd(j,:)));
+        
     end
+    for j=1:3
+        subplot(6,1,j+3);
+        plot(log_t,log_s(j,:));hold on;
+    end    
+    grid;
 end
 vrep.simxFinish(-1);  % close the link
 vrep.delete();        % destroy the 'vrep' class
